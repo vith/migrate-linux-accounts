@@ -1,0 +1,98 @@
+package main
+
+import (
+	"bufio"
+	"fmt"
+	"os"
+	"sort"
+	"strconv"
+	"strings"
+)
+
+const (
+	LIMIT  = 1000
+	NOBODY = 65534
+)
+
+func check(e error) {
+	if e != nil {
+		panic(e)
+	}
+}
+
+func printList(label string, list []string) {
+	fmt.Println(label)
+	for _, item := range list {
+		fmt.Println(item)
+	}
+	fmt.Println()
+}
+
+func idFilter(idField string) bool {
+	id, err := strconv.ParseInt(idField, 0, 0)
+	check(err)
+	return id >= LIMIT && id != NOBODY
+}
+
+func main() {
+	passwd := readFile("/etc/passwd")
+	filteredPasswd := filter(passwd, 2, idFilter)
+	printList("users to migrate:", filteredPasswd)
+
+	group := readFile("/etc/group")
+	filteredGroup := filter(group, 2, idFilter)
+	printList("groups to migrate:", filteredGroup)
+
+	usersToKeep := sort.StringSlice(collectField(filteredPasswd, 0))
+	sort.Sort(usersToKeep)
+	printList("usernames to migrate: ", usersToKeep)
+
+	keepUsers := func(username string) bool {
+		index := sort.SearchStrings(usersToKeep, username)
+		return usersToKeep[index] == username
+	}
+
+	shadow := readFile("/etc/shadow")
+	filteredShadow := filter(shadow, 0, keepUsers)
+	printList("shadow to migrate: ", filteredShadow)
+}
+
+func getField(line string, fieldNumber int) string {
+	fields := strings.Split(line, ":")
+	return fields[fieldNumber]
+}
+
+func collectField(lines []string, fieldNumber int) []string {
+	var values []string
+	for _, line := range lines {
+		values = append(values, getField(line, fieldNumber))
+	}
+	return values
+}
+
+func filter(lines []string, fieldNumber int, filterFunction func(string) bool) []string {
+	var kept []string
+	for _, line := range lines {
+		field := getField(line, fieldNumber)
+		if filterFunction(field) {
+			kept = append(kept, line)
+		}
+	}
+	return kept
+}
+
+func readFile(filename string) []string {
+	file, err := os.Open(filename)
+	check(err)
+	defer file.Close()
+
+	var lines []string
+
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		lines = append(lines, scanner.Text())
+	}
+	check(scanner.Err())
+
+	return lines
+}
